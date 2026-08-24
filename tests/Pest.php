@@ -27,9 +27,35 @@ pest()->extend(TestCase::class)
         'Feature/Requests',
         'Feature/Services',
         'Feature/Inventory',
+        'Feature/RateLimit',
         'Feature/ExampleTest.php',
     );
 
 pest()->extend(TestCase::class)
     ->use(DatabaseTruncation::class)
     ->in('Feature/Concurrency');
+
+/*
+|--------------------------------------------------------------------------
+| Helpers
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Reset all rate limiter counters so throttling tests are deterministic.
+ *
+ * The limiter counts through the cache; in production that is Redis, in the
+ * test env it may be the array store. Both are cleared here.
+ */
+function flushRateLimiterState(): void
+{
+    Illuminate\Support\Facades\Cache::store()->flush();
+
+    if (array_key_exists('redis', config('cache.stores', []))) {
+        try {
+            Illuminate\Support\Facades\Cache::store('redis')->flush();
+        } catch (Throwable) {
+            // Redis unavailable — the default store flush above is enough.
+        }
+    }
+}
