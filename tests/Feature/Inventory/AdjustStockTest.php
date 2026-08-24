@@ -100,8 +100,34 @@ it('dispatches StockLevelChangedEvent with old and new balance after an adjustme
             && $event->productId === $inventory->product_id
             && $event->oldBalance === 10
             && $event->newBalance === 3
-            && $event->type === 'adjustment';
+            && $event->type === 'adjustment'
+            && $event->reason === 'shrinkage';
     });
+});
+
+/*
+ * Phase 7 (A6) — the exact-zero boundary of test #4. Negative stock is
+ * rejected, but landing precisely on zero must SUCCEED.
+ */
+it('allows an adjustment that lands stock exactly on zero', function () {
+    $manager = User::factory()->warehouseManager()->create();
+    $inventory = seedAdjustInventory(10);
+
+    $this->withHeaders(adjustTokenFor($manager))
+        ->postJson('/api/v1/inventory/adjust', [
+            'warehouse_id' => $inventory->warehouse_id,
+            'product_id' => $inventory->product_id,
+            'quantity_delta' => -10,
+            'reason' => 'full write-off',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.quantity', 0);
+
+    $this->assertDatabaseHas('inventories', [
+        'warehouse_id' => $inventory->warehouse_id,
+        'product_id' => $inventory->product_id,
+        'quantity' => 0,
+    ]);
 });
 
 it('rejects with 422 an adjustment that would drive stock below zero and leaves stock unchanged', function () {
@@ -147,6 +173,34 @@ it('forbids an auditor from adjusting stock with 403', function () {
         'product_id' => $inventory->product_id,
         'quantity' => 10,
     ]);
+});
+
+/*
+ * Phase 7 (A5) — a valid warehouse + product with no `inventories` row.
+ * The service's lockForUpdate()->firstOrFail() surfaces as 404 (decision:
+ * keep the 404, pin it).
+ */
+it('returns 404 when no inventory row exists for the warehouse and product', function () {
+    $manager = User::factory()->warehouseManager()->create();
+
+    $warehouse = Warehouse::factory()->create();
+    $product = Product::factory()->create();
+
+    $this->assertDatabaseMissing('inventories', [
+        'warehouse_id' => $warehouse->id,
+        'product_id' => $product->id,
+    ]);
+
+    $this->withHeaders(adjustTokenFor($manager))
+        ->postJson('/api/v1/inventory/adjust', [
+            'warehouse_id' => $warehouse->id,
+            'product_id' => $product->id,
+            'quantity_delta' => 5,
+            'reason' => 'no such stock row',
+        ])
+        ->assertNotFound();
+
+    $this->assertDatabaseCount('inventory_transactions', 0);
 });
 
 it('returns 401 for an unauthenticated adjust request', function () {

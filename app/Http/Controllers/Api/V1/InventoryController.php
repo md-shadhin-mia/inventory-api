@@ -62,12 +62,10 @@ class InventoryController extends Controller
      */
     public function summary(Request $request): JsonResponse
     {
-        $filtered = $request->filled('warehouse_id') && $request->filled('product_id');
-
         return response()->json([
             'data' => $this->inventory->getStockSummary(
-                $filtered ? (int) $request->query('warehouse_id') : null,
-                $filtered ? (int) $request->query('product_id') : null,
+                $request->filled('warehouse_id') ? (int) $request->query('warehouse_id') : null,
+                $request->filled('product_id') ? (int) $request->query('product_id') : null,
             ),
         ]);
     }

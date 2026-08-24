@@ -105,20 +105,17 @@ class InventoryService implements InventoryServiceInterface
 
     public function getStockSummary(?int $warehouseId = null, ?int $productId = null): mixed
     {
-        if ($warehouseId !== null && $productId !== null) {
-            return Cache::remember(
-                Inventory::cacheKey($warehouseId, $productId),
-                3600,
-                fn () => Inventory::query()
-                    ->where('warehouse_id', $warehouseId)
-                    ->where('product_id', $productId)
-                    ->orderBy('id')
-                    ->get(['warehouse_id', 'product_id', 'quantity']),
-            );
-        }
-
-        return Inventory::query()
+        $query = fn () => Inventory::query()
+            ->when($warehouseId !== null, fn ($q) => $q->where('warehouse_id', $warehouseId))
+            ->when($productId !== null, fn ($q) => $q->where('product_id', $productId))
             ->orderBy('id')
             ->get(['warehouse_id', 'product_id', 'quantity']);
+
+        // Only the fully-qualified pair reads through the per-pair cache key.
+        if ($warehouseId !== null && $productId !== null) {
+            return Cache::remember(Inventory::cacheKey($warehouseId, $productId), 3600, $query);
+        }
+
+        return $query();
     }
 }

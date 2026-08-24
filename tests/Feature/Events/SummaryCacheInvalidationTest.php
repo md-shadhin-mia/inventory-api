@@ -75,6 +75,30 @@ it('leaves the per pair key absent for an unfiltered summary request', function 
     expect(Cache::has(summaryCacheKeyFor($inventory->warehouse_id, $inventory->product_id)))->toBeFalse();
 });
 
+/*
+ * Phase 7 (A4) — a half-filtered summary filters, but must NOT read or write
+ * through the per-pair key: that key's semantics stay strictly "both params
+ * given". Kept here so every cache-key assertion lives in one file.
+ */
+it('leaves the per pair key absent for a half filtered summary request', function () {
+    $user = User::factory()->warehouseManager()->create();
+    $inventory = seedSummaryCacheInventory(10);
+
+    $key = summaryCacheKeyFor($inventory->warehouse_id, $inventory->product_id);
+
+    $this->withHeaders(summaryCacheTokenFor($user))
+        ->getJson('/api/v1/inventory/summary?warehouse_id='.$inventory->warehouse_id)
+        ->assertOk();
+
+    expect(Cache::has($key))->toBeFalse('A warehouse_id-only request must not write the per-pair key.');
+
+    $this->withHeaders(summaryCacheTokenFor($user))
+        ->getJson('/api/v1/inventory/summary?product_id='.$inventory->product_id)
+        ->assertOk();
+
+    expect(Cache::has($key))->toBeFalse('A product_id-only request must not write the per-pair key.');
+});
+
 it('forgets the cached pair when stock is adjusted', function () {
     $user = User::factory()->warehouseManager()->create();
     $inventory = seedSummaryCacheInventory(10);

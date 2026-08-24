@@ -24,9 +24,17 @@
  * DatabaseTruncation (see tests/Pest.php): seeded rows are COMMITTED and
  * visible to the child processes, unlike under RefreshDatabase's wrapping
  * transaction.
+ *
+ * Phase 7 hardening: the parent no longer accepts "some failure" as proof of
+ * a business rejection. It asserts the loser died specifically with
+ * InsufficientStockException, that both children exited 0, that no child
+ * emitted a HARNESS: sentinel, and — as a direct lost-update detector — that
+ * exactly ONE inventory_transactions row was written.
  */
 
+use App\Exceptions\InsufficientStockException;
 use App\Models\Inventory;
+use App\Models\InventoryTransaction;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -62,7 +70,9 @@ function raceChildScript(string $dir, int $userId, int $warehouseId, int $produc
     \$deadline = microtime(true) + 10;
     while (! file_exists('{$dir}/go')) {
         if (microtime(true) > \$deadline) {
-            echo 'FAIL:timeout-waiting-for-go';
+            // HARNESS: prefix (never FAIL:) so a broken barrier can never be
+            // mistaken by the parent for a legitimate business rejection.
+            echo 'HARNESS:timeout-waiting-for-go';
             exit(1);
         }
         usleep(500);
@@ -169,18 +179,54 @@ it('serializes two parallel -7 adjustments on stock 10: one succeeds, one is rej
         'b' => trim($processes['b']->getOutput()),
     ];
 
+    $diagnostics = ' Outputs: '.json_encode($outputs)
+        .' Stderr: '.$processes['a']->getErrorOutput().$processes['b']->getErrorOutput()
+        .' Exit codes: '.json_encode(['a' => $processes['a']->getExitCode(), 'b' => $processes['b']->getExitCode()]);
+
+    // The harness itself must not have contributed either result: a
+    // HARNESS: sentinel means the barrier broke, not that the business rule
+    // rejected anything.
+    $harnessFailures = array_filter($outputs, fn (string $out) => str_starts_with($out, 'HARNESS:'));
+
+    expect($harnessFailures)->toHaveCount(0, 'The race harness itself failed; the result proves nothing about locking.'.$diagnostics);
+
+    // Both children must have completed their own run: the child catches
+    // Throwable and still exits 0, so a non-zero code is always a harness or
+    // boot failure rather than a business rejection.
+    expect($processes['a']->getExitCode())->toBe(0, 'Child A did not exit cleanly.'.$diagnostics)
+        ->and($processes['b']->getExitCode())->toBe(0, 'Child B did not exit cleanly.'.$diagnostics);
+
     $succeeded = array_filter($outputs, fn (string $out) => $out === 'OK');
-    $rejected = array_filter($outputs, fn (string $out) => str_starts_with($out, 'FAIL:'));
 
-    expect($succeeded)->toHaveCount(1, 'Exactly one of the two parallel adjustments must succeed. Outputs: '.json_encode($outputs).' Stderr: '.$processes['a']->getErrorOutput().$processes['b']->getErrorOutput())
-        ->and($rejected)->toHaveCount(1, 'Exactly one of the two parallel adjustments must be rejected. Outputs: '.json_encode($outputs));
+    // The loser must have been rejected SPECIFICALLY by the domain rule — not
+    // by a PDOException, a missing class, or any other incidental failure.
+    $rejected = array_filter(
+        $outputs,
+        fn (string $out) => str_starts_with($out, 'FAIL:'.InsufficientStockException::class.':'),
+    );
 
-    // Final committed balance: 10 - 7 = 3, and never negative.
+    expect($succeeded)->toHaveCount(1, 'Exactly one of the two parallel adjustments must succeed.'.$diagnostics)
+        ->and($rejected)->toHaveCount(1, 'Exactly one of the two parallel adjustments must be rejected with '.InsufficientStockException::class.'.'.$diagnostics);
+
+    // Final committed balance: 10 - 7 = 3.
     $finalQuantity = (int) Inventory::query()
         ->where('warehouse_id', $warehouse->id)
         ->where('product_id', $product->id)
         ->value('quantity');
 
-    expect($finalQuantity)->toBe(3)
-        ->and($finalQuantity)->toBeGreaterThanOrEqual(0);
+    expect($finalQuantity)->toBe(3, 'Final committed balance must be 10 - 7 = 3.'.$diagnostics);
+
+    // Direct lost-update detector: the children run their listeners inline
+    // (QUEUE_CONNECTION=sync + REDIS_QUEUE_DRIVER=sync), so exactly one
+    // successful adjustment must have written exactly one audit row. Two rows
+    // means both writes landed and one overwrote the other.
+    $transactions = InventoryTransaction::query()
+        ->where('warehouse_id', $warehouse->id)
+        ->where('product_id', $product->id)
+        ->get();
+
+    expect($transactions)->toHaveCount(1, 'Exactly one audit row must exist; more than one means a lost update.'.$diagnostics)
+        ->and((int) $transactions->first()->old_balance)->toBe(10)
+        ->and((int) $transactions->first()->new_balance)->toBe(3)
+        ->and((int) $transactions->first()->quantity_delta)->toBe(-7);
 });
