@@ -14,6 +14,14 @@ class Inventory extends Model
     use HasFactory;
 
     /**
+     * Cache key for a single warehouse/product pair.
+     */
+    public static function cacheKey(int $warehouseId, int $productId): string
+    {
+        return "inventory:warehouse:{$warehouseId}:product:{$productId}";
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

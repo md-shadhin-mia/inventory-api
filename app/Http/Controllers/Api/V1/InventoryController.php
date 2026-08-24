@@ -7,6 +7,7 @@ use App\Http\Requests\AdjustStockRequest;
 use App\Http\Requests\TransferStockRequest;
 use App\Services\Contracts\InventoryServiceInterface;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class InventoryController extends Controller
 {
@@ -59,8 +60,15 @@ class InventoryController extends Controller
     /**
      * Stock levels per warehouse and product.
      */
-    public function summary(): JsonResponse
+    public function summary(Request $request): JsonResponse
     {
-        return response()->json(['data' => $this->inventory->getStockSummary()]);
+        $filtered = $request->filled('warehouse_id') && $request->filled('product_id');
+
+        return response()->json([
+            'data' => $this->inventory->getStockSummary(
+                $filtered ? (int) $request->query('warehouse_id') : null,
+                $filtered ? (int) $request->query('product_id') : null,
+            ),
+        ]);
     }
 }

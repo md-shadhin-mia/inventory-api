@@ -8,5 +8,5 @@ interface InventoryServiceInterface
 
     public function transferStock(int $userId, int $sourceWarehouseId, int $targetWarehouseId, int $productId, int $quantity): mixed;
 
-    public function getStockSummary(): mixed;
+    public function getStockSummary(?int $warehouseId = null, ?int $productId = null): mixed;
 }

@@ -65,7 +65,11 @@ return [
         ],
 
         'redis' => [
-            'driver' => 'redis',
+            // Driver is env-overridable so the test suite can force `sync`:
+            // listeners declare `public $connection = 'redis'`, which takes
+            // precedence over QUEUE_CONNECTION and would otherwise require a
+            // live Redis in every mutation test.
+            'driver' => env('REDIS_QUEUE_DRIVER', 'redis'),
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
             'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),

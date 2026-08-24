@@ -98,6 +98,7 @@ function raceChildEnv(): array
         'DB_URL' => '',
         'CACHE_STORE' => 'array',
         'QUEUE_CONNECTION' => 'sync',
+        'REDIS_QUEUE_DRIVER' => 'sync', // listeners pin `redis`; keep it inline in child processes too
         'SESSION_DRIVER' => 'array',
         'BROADCAST_CONNECTION' => 'null',
         'MAIL_MAILER' => 'array',

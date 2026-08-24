@@ -27,6 +27,7 @@ pest()->extend(TestCase::class)
         'Feature/Requests',
         'Feature/Services',
         'Feature/Inventory',
+        'Feature/Events',
         'Feature/RateLimit',
         'Feature/ExampleTest.php',
     );

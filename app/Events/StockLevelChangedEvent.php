@@ -15,5 +15,6 @@ class StockLevelChangedEvent
         public int $oldBalance,
         public int $newBalance,
         public string $type,
+        public string $reason = '',
     ) {}
 }
