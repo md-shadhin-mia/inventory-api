@@ -41,18 +41,6 @@ it('returns 401 for an invalid bearer token', function () {
         ->assertUnauthorized();
 });
 
-/*
- * Regression: a guest hitting a protected API route WITHOUT an
- * `Accept: application/json` header used to 500, not 401.
- *
- * Illuminate\Auth\Middleware\Authenticate::redirectTo() calls route('login')
- * whenever $request->expectsJson() is false, and this API-only app defines no
- * `login` route — so it threw RouteNotFoundException before the handler's
- * shouldRenderJsonWhen() callback was ever consulted. Every other test in the
- * suite uses getJson(), which sets the header, so nothing caught it.
- *
- * Note `->get()`, not `->getJson()`: the missing header IS the test.
- */
 it('returns 401 rather than 500 for a guest request without a JSON accept header', function (string $uri) {
     $this->get($uri)
         ->assertUnauthorized()

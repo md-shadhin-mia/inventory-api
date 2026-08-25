@@ -10,6 +10,6 @@ use Illuminate\Database\Eloquent\Model;
 #[Fillable(['name'])]
 class Warehouse extends Model
 {
-    /** @use HasFactory<WarehouseFactory> */
+
     use HasFactory;
 }

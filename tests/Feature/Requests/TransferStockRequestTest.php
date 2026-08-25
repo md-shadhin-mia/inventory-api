@@ -1,13 +1,5 @@
 <?php
 
-/*
- * Phase 3 validation tests for `TransferStockRequest` (written FIRST).
- *
- * Rules exercised directly through the Validator — the Phase 4 transfer
- * endpoint (locking, atomicity) is out of scope here. Requires
- * Warehouse/Product models + factories backed by real tables.
- */
-
 use App\Http\Requests\TransferStockRequest;
 use App\Models\Product;
 use App\Models\Warehouse;

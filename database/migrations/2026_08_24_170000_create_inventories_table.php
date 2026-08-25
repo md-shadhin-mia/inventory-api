@@ -7,9 +7,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         Schema::create('inventories', function (Blueprint $table) {
@@ -22,13 +20,9 @@ return new class extends Migration
             $table->unique(['warehouse_id', 'product_id']);
         });
 
-        // DB-level backstop; the service path never reaches it thanks to lockForUpdate().
         DB::statement('ALTER TABLE inventories ADD CONSTRAINT inventories_quantity_non_negative CHECK (quantity >= 0)');
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('inventories');

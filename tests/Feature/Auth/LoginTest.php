@@ -25,7 +25,6 @@ it('returns user payload and a sanctum token for valid credentials', function ()
 
     expect($response->json('token'))->toBeString()->not->toBeEmpty();
 
-    // A persisted personal access token must exist for this user.
     $this->assertDatabaseHas('personal_access_tokens', [
         'tokenable_id' => $user->id,
         'tokenable_type' => User::class,

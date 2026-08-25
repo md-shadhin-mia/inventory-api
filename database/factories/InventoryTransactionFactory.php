@@ -8,16 +8,10 @@ use App\Models\User;
 use App\Models\Warehouse;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\InventoryTransaction>
- */
 class InventoryTransactionFactory extends Factory
 {
     protected $model = InventoryTransaction::class;
 
-    /**
-     * @return array<string, mixed>
-     */
     public function definition(): array
     {
         $old = fake()->numberBetween(0, 200);

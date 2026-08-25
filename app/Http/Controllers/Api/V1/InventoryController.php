@@ -13,9 +13,6 @@ class InventoryController extends Controller
 {
     public function __construct(private readonly InventoryServiceInterface $inventory) {}
 
-    /**
-     * Adjust stock for a warehouse/product pair.
-     */
     public function adjust(AdjustStockRequest $request): JsonResponse
     {
         $inventory = $this->inventory->adjustStock(
@@ -35,9 +32,6 @@ class InventoryController extends Controller
         ]);
     }
 
-    /**
-     * Transfer stock between two warehouses atomically.
-     */
     public function transfer(TransferStockRequest $request): JsonResponse
     {
         $result = $this->inventory->transferStock(
@@ -57,9 +51,6 @@ class InventoryController extends Controller
         ]);
     }
 
-    /**
-     * Stock levels per warehouse and product.
-     */
     public function summary(Request $request): JsonResponse
     {
         return response()->json([

@@ -8,11 +8,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class CheckRole
 {
-    /**
-     * Handle an incoming request.
-     *
-     * Usage: `role:admin,warehouse_manager`
-     */
+
     public function handle(Request $request, Closure $next, string ...$roles): Response
     {
         if (! in_array($request->user()?->role, $roles, true)) {

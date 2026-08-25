@@ -1,15 +1,5 @@
 <?php
 
-/*
- * Phase 3 contract/binding tests (written FIRST, per the TDD loop).
- *
- * Asserts the container wiring the rest of the app depends on:
- * `InventoryServiceInterface` resolves to a concrete `InventoryService`
- * via a service provider binding, and the interface exposes the three
- * contract methods (`adjustStock`, `transferStock`, `getStockSummary`).
- * No business logic is exercised here — that is Phase 4.
- */
-
 use App\Services\Contracts\InventoryServiceInterface;
 use App\Services\InventoryService;
 
@@ -20,8 +10,7 @@ it('resolves InventoryServiceInterface to an InventoryService instance', functio
 });
 
 it('resolves the interface consistently to the same concrete class on every resolution', function () {
-    // Controllers constructor-inject the interface; every resolution must
-    // yield the same concrete implementation class.
+
     expect(app(InventoryServiceInterface::class))->toBeInstanceOf(InventoryService::class)
         ->and(app(InventoryServiceInterface::class))->toBeInstanceOf(InventoryService::class);
 });

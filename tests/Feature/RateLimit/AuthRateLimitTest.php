@@ -1,17 +1,5 @@
 <?php
 
-/*
- * Phase 5 test #7 (auth half), written FIRST — drives:
- *   - `auth-limiter` registered in AppServiceProvider::boot() via RateLimiter::for()
- *   - 5 requests / minute, keyed by the CLIENT IP
- *   - applied as `throttle:auth-limiter` on POST /api/v1/auth/login
- *   - 429 body { "message": "Too many requests", "retry_after": N }
- *     plus a `Retry-After` header
- *
- * Limiter state lives in the cache (Redis in non-test envs). It is flushed
- * before every test here so the counters always start from zero.
- */
-
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 
@@ -102,7 +90,6 @@ it('keys the auth limiter per IP so another client is not blocked', function () 
             ]);
     }
 
-    // Exhausted for 10.0.0.1 ...
     $this->withServerVariables(['REMOTE_ADDR' => '10.0.0.1'])
         ->postJson('/api/v1/auth/login', [
             'email' => 'admin@example.com',
@@ -110,7 +97,6 @@ it('keys the auth limiter per IP so another client is not blocked', function () 
         ])
         ->assertStatus(429);
 
-    // ... but a different IP still has its full quota.
     $this->withServerVariables(['REMOTE_ADDR' => '10.0.0.2'])
         ->postJson('/api/v1/auth/login', [
             'email' => 'admin@example.com',

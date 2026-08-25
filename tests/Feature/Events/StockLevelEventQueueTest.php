@@ -1,19 +1,5 @@
 <?php
 
-/*
- * Phase 6 — Queued Event Listeners (Redis). Covers plan.md test #8 (event
- * dispatch + queue routing side). Written FIRST; drives:
- *   - App\Events\StockLevelChangedEvent gaining a trailing `public string $reason`
- *   - InventoryService::transferStock dispatching TWO events after commit
- *     (source `transfer_out`, target `transfer_in`)
- *   - App\Listeners\{AuditLogListener,LowStockAlertListener,InvalidateCacheListener}
- *     each implementing ShouldQueue on the `redis` connection
- *
- * Note: under QueueFake a CallQueuedListener's `connection` is ALWAYS null
- * (Dispatcher::propagateListenerOptions never assigns it), so the redis routing
- * is asserted statically off the listener instances instead.
- */
-
 use App\Events\StockLevelChangedEvent;
 use App\Listeners\AuditLogListener;
 use App\Listeners\InvalidateCacheListener;
@@ -170,7 +156,5 @@ it('does not run the listeners inline while the queue is faked', function () {
         ])
         ->assertOk();
 
-    // If the audit row appeared here, the service called the listener directly
-    // instead of leaving the side effect to the queue.
     $this->assertDatabaseCount('inventory_transactions', 0);
 });

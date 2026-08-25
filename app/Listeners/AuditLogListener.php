@@ -11,16 +11,8 @@ class AuditLogListener implements ShouldQueue
 {
     use InteractsWithQueue;
 
-    /**
-     * The queue connection the listener is pushed onto.
-     *
-     * @var string
-     */
     public $connection = 'redis';
 
-    /**
-     * Write the immutable audit trail row for a stock level change.
-     */
     public function handle(StockLevelChangedEvent $event): void
     {
         InventoryTransaction::create([

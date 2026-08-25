@@ -1,12 +1,5 @@
 <?php
 
-/*
- * Phase 4 — GET /api/v1/inventory/summary (auth:sanctum, any role).
- * Written FIRST; drives the summary endpoint reading the `inventories` table.
- *
- * Contract: 200 with { data: [ { warehouse_id, product_id, quantity }, ... ] }.
- */
-
 use App\Models\Inventory;
 use App\Models\Product;
 use App\Models\User;
@@ -45,13 +38,6 @@ it('is readable by every authenticated role', function (string $state) {
         ->assertJsonStructure(['data']);
 })->with(['admin', 'warehouseManager', 'auditor']);
 
-/*
- * Phase 7 (A4) — half-filtered summary. Decision: filter by whatever is
- * given. A lone warehouse_id or product_id is currently IGNORED and the whole
- * table comes back; these two tests are the RED item of this phase.
- * The both-params case (and its per-pair cache key) lives in
- * tests/Feature/Events/SummaryCacheInvalidationTest.php.
- */
 it('filters the summary to one warehouse when only warehouse_id is given', function () {
     $user = User::factory()->warehouseManager()->create();
 

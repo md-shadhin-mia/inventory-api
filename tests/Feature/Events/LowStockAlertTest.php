@@ -1,20 +1,5 @@
 <?php
 
-/*
- * Phase 6 — Queued Event Listeners (Redis). Covers plan.md test #9
- * (low-stock alert). Written FIRST; drives:
- *   - App\Listeners\LowStockAlertListener writing a structured Log::warning
- *     when the new balance falls below the product's reorder_threshold
- *   - a per-pair 1-hour cooldown held in Cache::add("low-stock:{w}:{p}", true, 3600)
- *
- * The alert is a LOG ENTRY ONLY (binding decision) — no Notification class.
- * Log::spy() is used rather than Log::shouldReceive so unrelated framework
- * logging does not explode a strict mock.
- *
- * ProductFactory randomizes reorder_threshold between 5 and 50, so every
- * product here passes an EXPLICIT threshold.
- */
-
 use App\Models\Inventory;
 use App\Models\Product;
 use App\Models\User;
@@ -78,7 +63,6 @@ it('logs no warning when the balance stays at or above the reorder threshold', f
     $manager = User::factory()->warehouseManager()->create();
     $inventory = seedLowStockInventory(quantity: 10, threshold: 5);
 
-    // 10 - 5 = 5, exactly AT the threshold — not below, so no alert.
     adjustLowStock($this, $manager, $inventory, -5);
 
     Log::shouldNotHaveReceived('warning');

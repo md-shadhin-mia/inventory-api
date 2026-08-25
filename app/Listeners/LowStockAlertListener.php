@@ -13,16 +13,8 @@ class LowStockAlertListener implements ShouldQueue
 {
     use InteractsWithQueue;
 
-    /**
-     * The queue connection the listener is pushed onto.
-     *
-     * @var string
-     */
     public $connection = 'redis';
 
-    /**
-     * Log a low stock warning, at most once per hour per warehouse/product pair.
-     */
     public function handle(StockLevelChangedEvent $event): void
     {
         $product = Product::find($event->productId);
@@ -31,7 +23,6 @@ class LowStockAlertListener implements ShouldQueue
             return;
         }
 
-        // Atomic set-if-absent: the first breach inside the window wins.
         if (! Cache::add("low-stock:{$event->warehouseId}:{$event->productId}", true, 3600)) {
             return;
         }

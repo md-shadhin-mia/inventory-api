@@ -10,6 +10,6 @@ use Illuminate\Database\Eloquent\Model;
 #[Fillable(['name', 'sku', 'reorder_threshold'])]
 class Product extends Model
 {
-    /** @use HasFactory<ProductFactory> */
+
     use HasFactory;
 }

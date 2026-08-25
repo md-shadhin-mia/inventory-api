@@ -1,16 +1,5 @@
 <?php
 
-/*
- * Phase 5 test #7 (mutation half), written FIRST — drives:
- *   - `inventory-mutation` registered in AppServiceProvider::boot()
- *   - 60 requests / minute, keyed by the AUTHENTICATED USER ID
- *   - applied as `throttle:inventory-mutation` on the stock write routes
- *     (POST /api/v1/inventory/adjust, POST /api/v1/inventory/transfer)
- *   - 429 body { "message": "Too many requests", "retry_after": N }
- *     plus a `Retry-After` header
- *   - read endpoints (summary, audit) are NOT throttled by this limiter
- */
-
 use App\Models\Inventory;
 use App\Models\Product;
 use App\Models\User;
@@ -89,7 +78,6 @@ it('blocks the sixty first stock mutation within a minute with 429 and a Retry-A
     expect((int) $response->headers->get('Retry-After'))
         ->toBe($response->json('retry_after'));
 
-    // The throttled request must not have touched the balance.
     $this->assertDatabaseHas('inventories', [
         'warehouse_id' => $inventory->warehouse_id,
         'product_id' => $inventory->product_id,

@@ -1,15 +1,5 @@
 <?php
 
-/*
- * Phase 3 validation tests for `AdjustStockRequest` (written FIRST).
- *
- * The rules are exercised directly through the Validator (the Phase 4
- * endpoint that consumes this FormRequest does not exist yet, and its
- * behavior — locking, balances — must not be tested here). Valid ids
- * require Warehouse/Product models + factories backed by real tables in
- * `inventory_testing`; these failing tests drive that implementation.
- */
-
 use App\Http\Requests\AdjustStockRequest;
 use App\Models\Product;
 use App\Models\Warehouse;

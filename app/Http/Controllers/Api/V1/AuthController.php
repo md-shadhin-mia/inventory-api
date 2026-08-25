@@ -11,9 +11,7 @@ use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
 {
-    /**
-     * Issue a personal access token for valid credentials.
-     */
+
     public function login(LoginRequest $request): JsonResponse
     {
         $user = User::where('email', $request->validated('email'))->first();
@@ -35,17 +33,11 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * Return the authenticated user.
-     */
     public function me(Request $request): JsonResponse
     {
         return response()->json(['user' => $request->user()]);
     }
 
-    /**
-     * Revoke only the token used for the current request.
-     */
     public function logout(Request $request): JsonResponse
     {
         $request->user()->currentAccessToken()->delete();

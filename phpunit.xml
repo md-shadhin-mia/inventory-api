@@ -34,8 +34,13 @@
             already exported, those win — and RefreshDatabase would then rebuild
             whatever database they point at.
 
+            The container's entrypoint also runs config:cache, and a cached
+            config ignores the environment entirely.
+
             So when running inside the Docker stack you MUST pass the test values
-            explicitly; see the "Running the tests" section of README.md:
+            explicitly AND bypass the cached config; see the "Tests" section of
+            README.md:
+              -e APP_CONFIG_CACHE=/tmp/testing-config-cache.php
               -e DB_DATABASE=inventory_testing -e CACHE_STORE=array
               -e QUEUE_CONNECTION=sync -e SESSION_DRIVER=array
 

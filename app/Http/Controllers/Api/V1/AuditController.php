@@ -8,9 +8,7 @@ use Illuminate\Http\JsonResponse;
 
 class AuditController extends Controller
 {
-    /**
-     * Immutable audit trail of inventory transactions.
-     */
+
     public function index(): JsonResponse
     {
         return response()->json([

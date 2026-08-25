@@ -1,15 +1,5 @@
 <?php
 
-/*
- * Phase 4 test #6 — transfer atomicity, written FIRST. Drives:
- *   - POST /api/v1/inventory/transfer (auth:sanctum + role:admin,warehouse_manager)
- *   - single transaction moving -Q from source and +Q to target, or full rollback
- *
- * Insufficient source stock uses the same chosen status as adjust: 422.
- * "Transfer to the same warehouse → 422" is already covered by the Phase 3
- * TransferStockRequest validation tests and is not duplicated here.
- */
-
 use App\Events\StockLevelChangedEvent;
 use App\Models\Inventory;
 use App\Models\Product;
@@ -22,9 +12,6 @@ function transferTokenFor(User $user): array
     return ['Authorization' => 'Bearer '.$user->createToken('api')->plainTextToken];
 }
 
-/**
- * @return array{product: \App\Models\Product, source: \App\Models\Inventory, target: \App\Models\Inventory}
- */
 function seedTransferPair(int $sourceQty, int $targetQty): array
 {
     $product = Product::factory()->create();
@@ -84,7 +71,6 @@ it('rejects a transfer exceeding source stock with 422 and leaves BOTH rows unch
         ->assertStatus(422)
         ->assertJsonStructure(['message']);
 
-    // Full rollback: neither the -Q nor the +Q side may be applied.
     $this->assertDatabaseHas('inventories', [
         'warehouse_id' => $source->warehouse_id,
         'product_id' => $product->id,
@@ -145,18 +131,6 @@ it('returns 401 for an unauthenticated transfer request', function () {
     ])->assertUnauthorized();
 });
 
-/*
- * Phase 7 (A2) — pin the transaction BOUNDARY, not just the happy path.
- *
- * Every other failure path above throws before the first write, so they stay
- * green even with DB::transaction() deleted. This one injects a failure
- * BETWEEN the two writes via a model event listener scoped to the target row:
- * the source decrement has already been issued when the target update blows
- * up, so only a real transaction can restore the source balance.
- *
- * The listener is registered inside the test body and flushed in a finally so
- * it cannot leak into sibling tests sharing this file's model dispatcher.
- */
 it('rolls the source decrement back when the target write fails mid transfer', function () {
     $this->withoutExceptionHandling();
 
@@ -183,8 +157,6 @@ it('rolls the source decrement back when the target write fails mid transfer', f
         Inventory::flushEventListeners();
     }
 
-    // THE assertion: the source write happened before the failure, so if the
-    // DB::transaction() wrapper is removed this row reads 30.
     $this->assertDatabaseHas('inventories', [
         'warehouse_id' => $source->warehouse_id,
         'product_id' => $product->id,
@@ -197,15 +169,9 @@ it('rolls the source decrement back when the target write fails mid transfer', f
         'quantity' => 5,
     ]);
 
-    // Events are dispatched only after commit, so no audit row may exist.
     $this->assertDatabaseCount('inventory_transactions', 0);
 });
 
-/*
- * Phase 7 (A5) — a valid warehouse + product with no `inventories` row.
- * The service's lockForUpdate()->firstOrFail() surfaces as 404 (decision:
- * keep the 404, pin it).
- */
 it('returns 404 when the source warehouse has no inventory row for the product', function () {
     $manager = User::factory()->warehouseManager()->create();
 

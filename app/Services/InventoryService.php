@@ -31,7 +31,6 @@ class InventoryService implements InventoryServiceInterface
             return [$inventory, $oldBalance];
         });
 
-        // Dispatched only after the transaction has committed.
         StockLevelChangedEvent::dispatch(
             $userId,
             $warehouseId,
@@ -48,7 +47,7 @@ class InventoryService implements InventoryServiceInterface
     public function transferStock(int $userId, int $sourceWarehouseId, int $targetWarehouseId, int $productId, int $quantity): mixed
     {
         [$source, $target, $sourceOldBalance, $targetOldBalance] = DB::transaction(function () use ($sourceWarehouseId, $targetWarehouseId, $productId, $quantity) {
-            // Deterministic lock order (lower warehouse_id first) to avoid deadlocks.
+
             [$firstWarehouseId, $secondWarehouseId] = $sourceWarehouseId < $targetWarehouseId
                 ? [$sourceWarehouseId, $targetWarehouseId]
                 : [$targetWarehouseId, $sourceWarehouseId];
@@ -79,7 +78,6 @@ class InventoryService implements InventoryServiceInterface
             return [$source, $target, $sourceOldBalance, $targetOldBalance];
         });
 
-        // Dispatched only after the transaction has committed.
         StockLevelChangedEvent::dispatch(
             $userId,
             $sourceWarehouseId,
@@ -111,7 +109,6 @@ class InventoryService implements InventoryServiceInterface
             ->orderBy('id')
             ->get(['warehouse_id', 'product_id', 'quantity']);
 
-        // Only the fully-qualified pair reads through the per-pair cache key.
         if ($warehouseId !== null && $productId !== null) {
             return Cache::remember(Inventory::cacheKey($warehouseId, $productId), 3600, $query);
         }

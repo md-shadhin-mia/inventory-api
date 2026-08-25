@@ -21,7 +21,6 @@ it('returns 401 when the revoked token is used again', function () {
         ->postJson('/api/v1/auth/logout')
         ->assertOk();
 
-    // Fresh request with the same (now revoked) token must be rejected.
     $this->flushHeaders();
 
     $this->withHeader('Authorization', "Bearer {$token}")

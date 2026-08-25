@@ -1,27 +1,13 @@
 <?php
 
-/*
- * RBAC matrix tests for the `CheckRole` middleware (Phase 2, test #2).
- *
- * Approach note: the real inventory endpoints belong to Phase 4 and do not
- * exist yet, so instead of asserting 403-vs-not-403 against unimplemented
- * routes, these tests register throwaway routes protected by the `role`
- * middleware alias (`role:admin,warehouse_manager`, mirroring the Phase 4
- * stock-write protection, and `role:admin,auditor` mirroring the audit
- * read protection). This exercises exactly the middleware contract Phase 2
- * must deliver and stays green through Phase 2 GREEN without depending on
- * Phase 4 work.
- */
-
 use App\Models\User;
 use Illuminate\Support\Facades\Route;
 
 beforeEach(function () {
-    // Mirrors Phase 4 stock-write protection: admin + warehouse_manager only.
+
     Route::middleware(['auth:sanctum', 'role:admin,warehouse_manager'])
         ->post('/api/v1/test/stock-write', fn () => response()->json(['ok' => true]));
 
-    // Mirrors Phase 4 audit-read protection: admin + auditor only.
     Route::middleware(['auth:sanctum', 'role:admin,auditor'])
         ->get('/api/v1/test/audit-read', fn () => response()->json(['ok' => true]));
 });

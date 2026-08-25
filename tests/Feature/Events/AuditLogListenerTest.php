@@ -1,14 +1,5 @@
 <?php
 
-/*
- * Phase 6 — the WRITE side of plan.md test #8: AuditLogListener turning a
- * StockLevelChangedEvent into an immutable `inventory_transactions` row.
- *
- * Deliberately no Queue::fake here — the test env forces the `redis` queue
- * connection onto the `sync` driver (REDIS_QUEUE_DRIVER in phpunit.xml), so the
- * listener runs inline and its effect is assertable through the HTTP endpoint.
- */
-
 use App\Models\Inventory;
 use App\Models\InventoryTransaction;
 use App\Models\Product;

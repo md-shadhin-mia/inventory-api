@@ -6,7 +6,6 @@ use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\InventoryController;
 use Illuminate\Support\Facades\Route;
 
-// Public: an orchestrator probe must not need a token.
 Route::get('v1/health', HealthController::class);
 
 Route::prefix('v1/auth')->group(function () {

@@ -76,6 +76,24 @@ The test suite uses the separate `inventory_testing` PostgreSQL database:
 ./vendor/bin/pest
 ```
 
+Inside the Docker stack the container exports real `DB_DATABASE`/`CACHE_STORE`/`QUEUE_CONNECTION`
+values and the entrypoint caches the config, both of which override `phpunit.xml`. Pass the test
+values explicitly and point `APP_CONFIG_CACHE` at a path that does not exist so the cached config
+is bypassed:
+
+```bash
+docker compose exec \
+  -e APP_CONFIG_CACHE=/tmp/testing-config-cache.php \
+  -e DB_DATABASE=inventory_testing \
+  -e CACHE_STORE=array \
+  -e QUEUE_CONNECTION=sync \
+  -e SESSION_DRIVER=array \
+  app php artisan test
+```
+
+Without those the queued listeners run on Redis instead of `sync`, the summary cache is never
+cleared between tests, and `RefreshDatabase` rebuilds the development database.
+
 Do not use `--parallel`; the concurrency tests require real process-level database locking.
 
 ## Seeded accounts

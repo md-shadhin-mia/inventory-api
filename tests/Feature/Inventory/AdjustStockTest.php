@@ -1,18 +1,5 @@
 <?php
 
-/*
- * Phase 4 tests #3 (adjust stock) and #4 (negative stock protection),
- * written FIRST — they drive:
- *   - POST /api/v1/inventory/adjust (auth:sanctum + role:admin,warehouse_manager)
- *   - `inventories` table/model (warehouse_id, product_id, quantity)
- *   - App\Events\StockLevelChangedEvent dispatched after commit with payload
- *     userId, warehouseId, productId, oldBalance, newBalance, type
- *
- * Chosen contract (asserted consistently across the suite):
- *   - success        → 200 with { data: { warehouse_id, product_id, quantity } }
- *   - insufficient   → 422 (Unprocessable) with { message }, stock unchanged
- */
-
 use App\Events\StockLevelChangedEvent;
 use App\Models\Inventory;
 use App\Models\Product;
@@ -105,10 +92,6 @@ it('dispatches StockLevelChangedEvent with old and new balance after an adjustme
     });
 });
 
-/*
- * Phase 7 (A6) — the exact-zero boundary of test #4. Negative stock is
- * rejected, but landing precisely on zero must SUCCEED.
- */
 it('allows an adjustment that lands stock exactly on zero', function () {
     $manager = User::factory()->warehouseManager()->create();
     $inventory = seedAdjustInventory(10);
@@ -175,11 +158,6 @@ it('forbids an auditor from adjusting stock with 403', function () {
     ]);
 });
 
-/*
- * Phase 7 (A5) — a valid warehouse + product with no `inventories` row.
- * The service's lockForUpdate()->firstOrFail() surfaces as 404 (decision:
- * keep the 404, pin it).
- */
 it('returns 404 when no inventory row exists for the warehouse and product', function () {
     $manager = User::factory()->warehouseManager()->create();
 

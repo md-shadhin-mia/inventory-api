@@ -1,37 +1,5 @@
 <?php
 
-/*
- * Phase 4 test #5 — THE race-condition test (written FIRST).
- *
- * stock = 10, two PARALLEL -7 adjustments → exactly one succeeds, one is
- * rejected, final committed stock = 3 and never negative. A naive
- * read-then-write implementation lets both succeed (final = -4 or 3 with a
- * lost update) and MUST fail this test; only lockForUpdate() inside a
- * transaction can pass it.
- *
- * Concurrency mechanism (chosen for this environment and documented per the
- * plan): two independent PHP OS processes via Symfony\Component\Process.
- * Each child boots the full Laravel app against the real PostgreSQL
- * `inventory_testing` database (env vars are injected explicitly so .env dev
- * values cannot leak in — Dotenv never overrides real environment
- * variables), then spins on a shared "go" signal file. The parent only
- * creates the go-file after BOTH children reported ready, guaranteeing the
- * two adjustStock() calls genuinely overlap in time rather than running
- * sequentially. pcntl_fork was rejected because forking a booted PHPUnit
- * process shares the parent's PDO connection, which corrupts both sides.
- *
- * This file lives in tests/Feature/Concurrency and therefore uses
- * DatabaseTruncation (see tests/Pest.php): seeded rows are COMMITTED and
- * visible to the child processes, unlike under RefreshDatabase's wrapping
- * transaction.
- *
- * Phase 7 hardening: the parent no longer accepts "some failure" as proof of
- * a business rejection. It asserts the loser died specifically with
- * InsufficientStockException, that both children exited 0, that no child
- * emitted a HARNESS: sentinel, and — as a direct lost-update detector — that
- * exactly ONE inventory_transactions row was written.
- */
-
 use App\Exceptions\InsufficientStockException;
 use App\Models\Inventory;
 use App\Models\InventoryTransaction;
@@ -102,13 +70,13 @@ function raceChildEnv(): array
         'DB_CONNECTION' => 'pgsql',
         'DB_HOST' => $db['host'],
         'DB_PORT' => (string) $db['port'],
-        'DB_DATABASE' => $db['database'], // inventory_testing — committed rows are visible here
+        'DB_DATABASE' => $db['database'],
         'DB_USERNAME' => $db['username'],
         'DB_PASSWORD' => $db['password'],
         'DB_URL' => '',
         'CACHE_STORE' => 'array',
         'QUEUE_CONNECTION' => 'sync',
-        'REDIS_QUEUE_DRIVER' => 'sync', // listeners pin `redis`; keep it inline in child processes too
+        'REDIS_QUEUE_DRIVER' => 'sync',
         'SESSION_DRIVER' => 'array',
         'BROADCAST_CONNECTION' => 'null',
         'MAIL_MAILER' => 'array',
@@ -127,12 +95,6 @@ afterEach(function () {
 
     @rmdir($dir);
 
-    // Everything this test touches is COMMITTED (that is the whole point of the
-    // suite), and DatabaseTruncation gives no wrapping transaction to roll back.
-    // DatabaseTruncation only cleans up BEFORE a test, so without this the rows
-    // survive the whole run and are still present on the NEXT one — where the
-    // Feature suite counts them and fails with "expected 1, found 2".
-    // Child-first order respects the foreign keys.
     InventoryTransaction::query()->delete();
     Inventory::query()->delete();
     Product::query()->delete();
@@ -141,7 +103,7 @@ afterEach(function () {
 });
 
 it('serializes two parallel -7 adjustments on stock 10: one succeeds, one is rejected, final stock is 3', function () {
-    // Committed seed data (DatabaseTruncation — no wrapping transaction).
+
     $manager = User::factory()->warehouseManager()->create();
     $warehouse = Warehouse::factory()->create();
     $product = Product::factory()->create();
@@ -163,7 +125,6 @@ it('serializes two parallel -7 adjustments on stock 10: one succeeds, one is rej
         $processes[$label] = $process;
     }
 
-    // Wait until BOTH children have booted and are parked on the start line.
     $deadline = microtime(true) + 15;
     while (! file_exists($dir.'/ready-a') || ! file_exists($dir.'/ready-b')) {
         if (microtime(true) > $deadline) {
@@ -179,7 +140,6 @@ it('serializes two parallel -7 adjustments on stock 10: one succeeds, one is rej
         usleep(1000);
     }
 
-    // Fire the shared start signal — both adjustments now run concurrently.
     touch($dir.'/go');
 
     foreach ($processes as $process) {
@@ -195,23 +155,15 @@ it('serializes two parallel -7 adjustments on stock 10: one succeeds, one is rej
         .' Stderr: '.$processes['a']->getErrorOutput().$processes['b']->getErrorOutput()
         .' Exit codes: '.json_encode(['a' => $processes['a']->getExitCode(), 'b' => $processes['b']->getExitCode()]);
 
-    // The harness itself must not have contributed either result: a
-    // HARNESS: sentinel means the barrier broke, not that the business rule
-    // rejected anything.
     $harnessFailures = array_filter($outputs, fn (string $out) => str_starts_with($out, 'HARNESS:'));
 
     expect($harnessFailures)->toHaveCount(0, 'The race harness itself failed; the result proves nothing about locking.'.$diagnostics);
 
-    // Both children must have completed their own run: the child catches
-    // Throwable and still exits 0, so a non-zero code is always a harness or
-    // boot failure rather than a business rejection.
     expect($processes['a']->getExitCode())->toBe(0, 'Child A did not exit cleanly.'.$diagnostics)
         ->and($processes['b']->getExitCode())->toBe(0, 'Child B did not exit cleanly.'.$diagnostics);
 
     $succeeded = array_filter($outputs, fn (string $out) => $out === 'OK');
 
-    // The loser must have been rejected SPECIFICALLY by the domain rule — not
-    // by a PDOException, a missing class, or any other incidental failure.
     $rejected = array_filter(
         $outputs,
         fn (string $out) => str_starts_with($out, 'FAIL:'.InsufficientStockException::class.':'),
@@ -220,7 +172,6 @@ it('serializes two parallel -7 adjustments on stock 10: one succeeds, one is rej
     expect($succeeded)->toHaveCount(1, 'Exactly one of the two parallel adjustments must succeed.'.$diagnostics)
         ->and($rejected)->toHaveCount(1, 'Exactly one of the two parallel adjustments must be rejected with '.InsufficientStockException::class.'.'.$diagnostics);
 
-    // Final committed balance: 10 - 7 = 3.
     $finalQuantity = (int) Inventory::query()
         ->where('warehouse_id', $warehouse->id)
         ->where('product_id', $product->id)
@@ -228,10 +179,6 @@ it('serializes two parallel -7 adjustments on stock 10: one succeeds, one is rej
 
     expect($finalQuantity)->toBe(3, 'Final committed balance must be 10 - 7 = 3.'.$diagnostics);
 
-    // Direct lost-update detector: the children run their listeners inline
-    // (QUEUE_CONNECTION=sync + REDIS_QUEUE_DRIVER=sync), so exactly one
-    // successful adjustment must have written exactly one audit row. Two rows
-    // means both writes landed and one overwrote the other.
     $transactions = InventoryTransaction::query()
         ->where('warehouse_id', $warehouse->id)
         ->where('product_id', $product->id)
