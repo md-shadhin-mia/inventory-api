@@ -1,0 +1,571 @@
+openapi: 3.0.3
+
+# Hand-authored from the Phase 8 documentation (README.md endpoint reference).
+# Kept as a single tracked document so the controllers stay lean — l5-swagger
+# serves this file rather than generating it from annotations (config/l5-swagger.php: generate_always = false).
+#
+# If you change an endpoint's contract, update this file in the same commit.
+
+info:
+  title: Inventory Management API
+  version: "1.0.0"
+  description: |
+    RESTful API for a high-concurrency inventory management system.
+
+    Stock operations are serialised with PostgreSQL row locks (`SELECT ... FOR UPDATE`)
+    inside a transaction, so stock can never go negative under parallel requests.
+    Side effects — the audit trail, low-stock alerting and cache invalidation — are
+    queued listeners driven by a domain event dispatched **after** commit.
+
+    ### Authentication
+    Log in via `POST /auth/login`, then send `Authorization: Bearer <token>`.
+    Seeded accounts (password `password`): `admin@example.com`,
+    `manager@example.com`, `auditor@example.com`.
+
+    ### Eventual consistency
+    Audit rows are written by a queued listener, so a row may not appear in
+    `GET /audit/transactions` immediately after a mutation unless a worker has
+    processed the job.
+
+    ### Error precedence
+    `auth (401) → role (403) → throttle (429) → validation (422) → service (422 stock / 404 missing row)`
+
+    Note the two distinct 422 shapes: validation errors carry an `errors` object,
+    insufficient-stock errors are `message`-only.
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local
+
+tags:
+  - name: Health
+    description: Public service probe
+  - name: Auth
+    description: Token issue, revoke and identity
+  - name: Inventory
+    description: Concurrency-safe stock operations
+  - name: Audit
+    description: Immutable audit trail
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Service health probe
+      description: |
+        Public — no token required. Actively checks PostgreSQL and the cache
+        store, so a 200 means this instance can serve requests rather than
+        merely that PHP is running. Used by the docker-compose healthcheck.
+
+        Never returns 500: a failing dependency is reported as `error`.
+      operationId: health
+      security: []
+      responses:
+        "200":
+          description: All dependencies responding
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+              example:
+                status: ok
+                services: { database: ok, cache: ok }
+        "503":
+          description: At least one dependency failed its probe
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+              example:
+                status: degraded
+                services: { database: ok, cache: error }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Issue a Sanctum token
+      description: |
+        Rate limited to **5 per minute per IP**. Failed attempts count toward
+        the limit, so the limiter is useful against credential stuffing.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+            example:
+              email: manager@example.com
+              password: password
+      responses:
+        "200":
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/UserSummary"
+                  token:
+                    type: string
+              example:
+                user:
+                  id: 2
+                  name: Mo Manager
+                  email: manager@example.com
+                  role: warehouse_manager
+                token: "7|8mQ2Zx1v0KcJp0wY6bB3rQnT9sLdF4aE1uHgV2kX"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: Invalid credentials.
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the current token
+      description: Revokes **only** the token used for this request; the user's other tokens remain valid.
+      operationId: logout
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: Logged out.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current authenticated user
+      description: Any role may call this. `password` and `remember_token` are never exposed.
+      operationId: me
+      responses:
+        "200":
+          description: The authenticated user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /inventory/adjust:
+    post:
+      tags: [Inventory]
+      summary: Adjust stock for one warehouse/product pair
+      description: |
+        `quantity_delta` is signed — negative decrements, positive increments.
+
+        Runs inside a transaction with `lockForUpdate()`. A delta that would
+        drive the balance below zero is rejected with 422 and rolled back.
+
+        **Roles:** `admin`, `warehouse_manager`.
+        **Rate limit:** 60/min per user, shared with `/inventory/transfer`.
+      operationId: adjustStock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [warehouse_id, product_id, quantity_delta, reason]
+              properties:
+                warehouse_id:
+                  type: integer
+                  description: Must exist in `warehouses`.
+                product_id:
+                  type: integer
+                  description: Must exist in `products`.
+                quantity_delta:
+                  type: integer
+                  description: Signed. `0` is accepted.
+                reason:
+                  type: string
+                  maxLength: 255
+            example:
+              warehouse_id: 1
+              product_id: 1
+              quantity_delta: -7
+              reason: shrinkage
+      responses:
+        "200":
+          description: Adjusted — `quantity` is the post-adjustment balance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/StockLevel"
+              example:
+                data: { warehouse_id: 1, product_id: 1, quantity: 93 }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NoInventoryRow"
+        "422":
+          description: Validation error, or insufficient stock
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/Message"
+              examples:
+                insufficientStock:
+                  summary: Insufficient stock (no `errors` key)
+                  value:
+                    message: Insufficient stock for this adjustment.
+                validation:
+                  summary: Validation error
+                  value:
+                    message: The selected warehouse id is invalid.
+                    errors:
+                      warehouse_id: ["The selected warehouse id is invalid."]
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /inventory/transfer:
+    post:
+      tags: [Inventory]
+      summary: Move stock between warehouses atomically
+      description: |
+        Both rows are locked in ascending `warehouse_id` order to avoid
+        deadlocks, and the whole move is a single transaction — insufficient
+        source stock rolls **both** legs back.
+
+        Writes two audit rows: `transfer_out` and `transfer_in`.
+
+        **Roles:** `admin`, `warehouse_manager`.
+        **Rate limit:** 60/min per user, shared with `/inventory/adjust`.
+      operationId: transferStock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_warehouse_id, target_warehouse_id, product_id, quantity]
+              properties:
+                source_warehouse_id:
+                  type: integer
+                target_warehouse_id:
+                  type: integer
+                  description: Must differ from `source_warehouse_id`.
+                product_id:
+                  type: integer
+                quantity:
+                  type: integer
+                  minimum: 1
+            example:
+              source_warehouse_id: 1
+              target_warehouse_id: 2
+              product_id: 3
+              quantity: 10
+      responses:
+        "200":
+          description: Transferred. Note the response carries no quantities.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      source_warehouse_id: { type: integer }
+                      target_warehouse_id: { type: integer }
+                      product_id: { type: integer }
+              example:
+                data: { source_warehouse_id: 1, target_warehouse_id: 2, product_id: 3 }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NoInventoryRow"
+        "422":
+          description: Validation error, or insufficient source stock
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/Message"
+              examples:
+                insufficientStock:
+                  summary: Insufficient source stock — full rollback
+                  value:
+                    message: Insufficient stock in source warehouse for this transfer.
+                sameWarehouse:
+                  summary: Source and target must differ
+                  value:
+                    message: The target warehouse id field and source warehouse id must be different.
+                    errors:
+                      target_warehouse_id: ["The target warehouse id field and source warehouse id must be different."]
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /inventory/summary:
+    get:
+      tags: [Inventory]
+      summary: Current stock levels
+      description: |
+        Readable by **all** authenticated roles and not rate limited.
+
+        Both query parameters are optional and applied independently. Only the
+        fully-qualified pair (**both** supplied) is served through the cache key
+        `inventory:warehouse:{w}:product:{p}` with a 3600s TTL; unfiltered and
+        half-filtered requests are always live reads.
+
+        Results are ordered by `inventories.id` ascending.
+      operationId: stockSummary
+      parameters:
+        - name: warehouse_id
+          in: query
+          required: false
+          schema: { type: integer }
+          description: Filter to one warehouse.
+        - name: product_id
+          in: query
+          required: false
+          schema: { type: integer }
+          description: Filter to one product.
+      responses:
+        "200":
+          description: Stock levels
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/StockLevel"
+              example:
+                data:
+                  - { warehouse_id: 1, product_id: 1, quantity: 93 }
+                  - { warehouse_id: 2, product_id: 3, quantity: 15 }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /audit/transactions:
+    get:
+      tags: [Audit]
+      summary: Immutable audit trail
+      description: |
+        Newest first, unpaginated. Rows are append-only — the table has no
+        `updated_at` column.
+
+        **Roles:** `admin`, `auditor` (a `warehouse_manager` gets 403).
+
+        Written by a queued listener, so a row may not appear immediately after
+        a mutation unless a worker has processed the job.
+      operationId: auditTransactions
+      responses:
+        "200":
+          description: Audit rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InventoryTransaction"
+              example:
+                data:
+                  - id: 12
+                    user_id: 2
+                    warehouse_id: 1
+                    product_id: 1
+                    old_balance: 100
+                    new_balance: 93
+                    quantity_delta: -7
+                    type: adjustment
+                    reason: shrinkage
+                    created_at: "2026-08-24T12:04:11.000000Z"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Sanctum personal access token from `POST /auth/login`.
+
+  schemas:
+    Message:
+      type: object
+      properties:
+        message: { type: string }
+
+    ValidationError:
+      type: object
+      properties:
+        message: { type: string }
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        services:
+          type: object
+          properties:
+            database: { type: string, enum: [ok, error] }
+            cache: { type: string, enum: [ok, error] }
+
+    UserSummary:
+      type: object
+      description: The trimmed user payload returned by login.
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, format: email }
+        role:
+          type: string
+          enum: [admin, warehouse_manager, auditor]
+
+    User:
+      type: object
+      description: Raw model serialisation; `password` and `remember_token` are hidden.
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, format: email }
+        email_verified_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        role:
+          type: string
+          enum: [admin, warehouse_manager, auditor]
+
+    StockLevel:
+      type: object
+      properties:
+        warehouse_id: { type: integer }
+        product_id: { type: integer }
+        quantity: { type: integer }
+
+    InventoryTransaction:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        warehouse_id: { type: integer }
+        product_id: { type: integer }
+        old_balance: { type: integer }
+        new_balance: { type: integer }
+        quantity_delta: { type: integer }
+        type:
+          type: string
+          enum: [adjustment, transfer_out, transfer_in]
+        reason: { type: string }
+        created_at: { type: string, format: date-time }
+
+  responses:
+    Unauthenticated:
+      description: Missing, invalid or revoked token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Message"
+          example:
+            message: Unauthenticated.
+
+    Forbidden:
+      description: Authenticated, but the role is not permitted
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Message"
+          example:
+            message: Forbidden.
+
+    NoInventoryRow:
+      description: The warehouse and product exist, but there is no inventory row for the pair
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Message"
+          example:
+            message: "No query results for model [App\\Models\\Inventory]."
+
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationError"
+          example:
+            message: The email field is required. (and 1 more error)
+            errors:
+              email: ["The email field is required."]
+              password: ["The password field is required."]
+
+    TooManyRequests:
+      description: |
+        Rate limit exceeded. Sent with `Retry-After`, `X-RateLimit-Limit`,
+        `X-RateLimit-Remaining` and `X-RateLimit-Reset` headers; `retry_after`
+        always equals the `Retry-After` header.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Seconds until the limit resets.
+        X-RateLimit-Limit:
+          schema: { type: integer }
+        X-RateLimit-Remaining:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message: { type: string }
+              retry_after: { type: integer }
+          example:
+            message: Too many requests
+            retry_after: 47

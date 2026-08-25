@@ -126,6 +126,18 @@ afterEach(function () {
     }
 
     @rmdir($dir);
+
+    // Everything this test touches is COMMITTED (that is the whole point of the
+    // suite), and DatabaseTruncation gives no wrapping transaction to roll back.
+    // DatabaseTruncation only cleans up BEFORE a test, so without this the rows
+    // survive the whole run and are still present on the NEXT one — where the
+    // Feature suite counts them and fails with "expected 1, found 2".
+    // Child-first order respects the foreign keys.
+    InventoryTransaction::query()->delete();
+    Inventory::query()->delete();
+    Product::query()->delete();
+    Warehouse::query()->delete();
+    User::query()->delete();
 });
 
 it('serializes two parallel -7 adjustments on stock 10: one succeeds, one is rejected, final stock is 3', function () {

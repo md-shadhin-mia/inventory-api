@@ -24,22 +24,40 @@
         </include>
     </source>
     <php>
-        <env name="APP_ENV" value="testing"/>
+        <!--
+            These values apply when the variable is NOT already present in the
+            real process environment.
+
+            IMPORTANT, verified empirically: `force="true"` does NOT override a
+            real environment variable here. If you run this suite in a shell (or
+            a container) where DB_DATABASE / CACHE_STORE / QUEUE_CONNECTION are
+            already exported, those win — and RefreshDatabase would then rebuild
+            whatever database they point at.
+
+            So when running inside the Docker stack you MUST pass the test values
+            explicitly; see the "Running the tests" section of README.md:
+              -e DB_DATABASE=inventory_testing -e CACHE_STORE=array
+              -e QUEUE_CONNECTION=sync -e SESSION_DRIVER=array
+
+            DB_HOST/DB_PORT are intentionally left plain so a container's
+            DB_HOST=postgres is picked up without a second config file.
+        -->
+        <env name="APP_ENV" value="testing" force="true"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
-        <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="pgsql"/>
+        <env name="CACHE_STORE" value="array" force="true"/>
+        <env name="DB_CONNECTION" value="pgsql" force="true"/>
         <env name="DB_HOST" value="127.0.0.1"/>
         <env name="DB_PORT" value="5432"/>
-        <env name="DB_DATABASE" value="inventory_testing"/>
-        <env name="DB_USERNAME" value="postgres"/>
-        <env name="DB_PASSWORD" value="12345678"/>
-        <env name="DB_URL" value=""/>
+        <env name="DB_DATABASE" value="inventory_testing" force="true"/>
+        <env name="DB_USERNAME" value="postgres" force="true"/>
+        <env name="DB_PASSWORD" value="12345678" force="true"/>
+        <env name="DB_URL" value="" force="true"/>
         <env name="MAIL_MAILER" value="array"/>
-        <env name="QUEUE_CONNECTION" value="sync"/>
-        <env name="REDIS_QUEUE_DRIVER" value="sync"/>
-        <env name="SESSION_DRIVER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync" force="true"/>
+        <env name="REDIS_QUEUE_DRIVER" value="sync" force="true"/>
+        <env name="SESSION_DRIVER" value="array" force="true"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>

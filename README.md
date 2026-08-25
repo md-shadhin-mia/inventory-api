@@ -1,58 +1,95 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Inventory Management API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Laravel 13 REST API for inventory management, stock adjustments, transfers, audit history, and role-based access control.
 
-## About Laravel
+## Requirements
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- PHP 8.4 with `pdo_pgsql` and `phpredis`
+- Composer
+- PostgreSQL 16
+- Redis 7
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Local setup
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+Install dependencies and configure the application:
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+composer install
+cp .env.example .env
+php artisan key:generate
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Create the application and test databases in postgresql:
 
-## Contributing
+```bash
+createdb -U postgres inventory
+createdb -U postgres inventory_testing
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Update the database and Redis settings in `.env` if your local credentials differ, then run migrations and seed the database:
 
-## Code of Conduct
+```bash
+php artisan migrate
+php artisan db:seed
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Start the API and queue worker in separate terminals:
 
-## Security Vulnerabilities
+```bash
+php artisan serve
+php artisan queue:work redis --tries=3 --backoff=5 --timeout=60
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+The API is available at `http://localhost:8000`.
 
-## License
+## Docker setup
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Docker Compose starts the API, queue worker, PostgreSQL, and Redis. It also runs migrations automatically:
+
+```bash
+cp .env.example .env
+php artisan key:generate --show
+# Set APP_KEY in .env to the generated value.
+docker compose up -d --build
+```
+
+Check the API health endpoint:
+
+```bash
+curl http://localhost:8000/api/v1/health
+```
+
+To seed the database, use the development image:
+
+```bash
+BUILD_TARGET=dev docker compose up -d --build
+docker compose exec app php artisan db:seed
+```
+
+Default Docker ports are API `8000`, PostgreSQL `5434`, and Redis `6381`. Override them with `APP_PORT`, `POSTGRES_PORT`, and `REDIS_PORT_HOST` in `.env`.
+
+## Tests
+
+The test suite uses the separate `inventory_testing` PostgreSQL database:
+
+```bash
+./vendor/bin/pest
+```
+
+Do not use `--parallel`; the concurrency tests require real process-level database locking.
+
+## Seeded accounts
+
+All seeded accounts use the password `password`.
+
+| Email | Role |
+|---|---|
+| `admin@example.com` | `admin` |
+| `manager@example.com` | `warehouse_manager` |
+| `auditor@example.com` | `auditor` |
+
+## API reference
+
+The complete API contract, endpoints, authentication, request validation, responses, and error formats are defined in [`openapi/openapi.yaml`](openapi/openapi.yaml).
+
+When the application is running, the same specification is available through Swagger UI at [`http://localhost:8000/api/documentation`](http://localhost:8000/api/documentation). The root path (`/`) redirects there.

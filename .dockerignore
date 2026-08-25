@@ -1,0 +1,52 @@
+# VCS & tooling
+.git
+.gitattributes
+.gitignore
+.github
+.idea
+.vscode
+.zed
+.nova
+.claude
+.codex
+.cursor
+.editorconfig
+.phpactor.json
+_ide_helper.php
+
+# Secrets — never bake these into an image layer.
+# .env also carries 127.0.0.1 hostnames that are wrong inside a container.
+.env
+.env.*
+!.env.example
+auth.json
+
+# Regenerated in dedicated build stages
+vendor
+node_modules
+public/build
+public/hot
+public/storage
+
+# Runtime state (the Dockerfile recreates the framework directories)
+storage/logs
+storage/framework/cache/data
+storage/framework/sessions
+storage/framework/views
+storage/framework/testing
+storage/pail
+storage/*.key
+bootstrap/cache/*.php
+.phpunit.result.cache
+.phpunit.cache
+
+# Docker's own files
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Docs
+*.md
+
+# NOTE: tests/, phpunit.xml and docker/ are deliberately NOT ignored — the
+# suite must be runnable inside the container (see the `dev` build target).

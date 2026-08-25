@@ -29,12 +29,17 @@ pest()->extend(TestCase::class)
         'Feature/Inventory',
         'Feature/Events',
         'Feature/RateLimit',
-        'Feature/ExampleTest.php',
+        'Feature/Health',
     );
 
 pest()->extend(TestCase::class)
     ->use(DatabaseTruncation::class)
     ->in('Feature/Concurrency');
+
+// Docs serve a static OpenAPI file and Swagger UI assets — no database needed,
+// so these deliberately skip RefreshDatabase and stay fast.
+pest()->extend(TestCase::class)
+    ->in('Feature/Docs');
 
 /*
 |--------------------------------------------------------------------------

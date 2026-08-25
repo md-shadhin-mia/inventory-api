@@ -1,0 +1,142 @@
+name: inventory-api
+
+# Shared by app and queue-worker. This anchor is NOT cosmetic: config/database.php
+# and config/cache.php derive their Redis key prefixes from Str::slug(APP_NAME),
+# so if the two services disagreed on APP_NAME the worker would read a different
+# Redis keyspace than the writer.
+x-app-env: &app-env
+  APP_NAME: "Inventory API"
+  APP_ENV: production
+  APP_DEBUG: "false"
+  APP_KEY: "${APP_KEY:?APP_KEY is required — copy it from .env, or generate one with php artisan key:generate --show}"
+  APP_URL: http://localhost:8000
+
+  LOG_CHANNEL: stderr
+  LOG_LEVEL: info
+
+  DB_CONNECTION: pgsql
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_DATABASE: ${DB_DATABASE:-inventory}
+  DB_USERNAME: ${DB_USERNAME:-postgres}
+  DB_PASSWORD: ${DB_PASSWORD:-12345678}
+
+  REDIS_CLIENT: phpredis
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  # Laravel casts the string "null" to null; an empty string would make
+  # phpredis attempt an AUTH with an empty password.
+  REDIS_PASSWORD: "null"
+
+  CACHE_STORE: redis
+  QUEUE_CONNECTION: redis
+  SESSION_DRIVER: redis
+  BROADCAST_CONNECTION: log
+  MAIL_MAILER: log
+
+services:
+  app:
+    build:
+      context: .
+      target: ${BUILD_TARGET:-app}
+    image: inventory-api:${BUILD_TARGET:-app}
+    environment:
+      <<: *app-env
+      CONTAINER_ROLE: app
+      RUN_MIGRATIONS: "true"
+    ports:
+      - "${APP_PORT:-8000}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # /api/v1/health probes PostgreSQL and the cache store, so a green result
+      # means "can serve requests", not just "PHP is up" (which /up would give).
+      # busybox wget, not curl: php:8.4-fpm-alpine ships libcurl but no curl binary.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/api/v1/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    init: true
+    restart: unless-stopped
+
+  queue-worker:
+    build:
+      context: .
+      target: ${BUILD_TARGET:-app}
+    image: inventory-api:${BUILD_TARGET:-app}
+    environment:
+      <<: *app-env
+      CONTAINER_ROLE: worker
+      RUN_MIGRATIONS: "false"
+    command:
+      - php
+      - artisan
+      - queue:work
+      - redis
+      - --queue=default
+      - --tries=3
+      - --backoff=5
+      # --timeout MUST stay below queue.connections.redis.retry_after (90).
+      # Invert them and a still-running job is released and re-run, which with
+      # AuditLogListener means duplicate audit rows.
+      - --timeout=60
+      - --max-time=3600
+      - --max-jobs=500
+      - --sleep=1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # Waits for the app container, which is what runs the migrations.
+      app:
+        condition: service_healthy
+    init: true
+    # Exceeds --timeout so an in-flight job can finish during shutdown.
+    stop_grace_period: 70s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-inventory}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-12345678}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Host port is shifted (and overridable) because 5432/5433 are commonly
+      # taken by a local Postgres install or another compose project.
+      # Override with POSTGRES_PORT in ./.env if 5434 is busy too.
+      - "${POSTGRES_PORT:-5434}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d ${DB_DATABASE:-inventory}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    ports:
+      # Same reasoning as postgres — override with REDIS_PORT_HOST in ./.env.
+      - "${REDIS_PORT_HOST:-6381}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
